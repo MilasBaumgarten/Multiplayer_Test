@@ -30,7 +30,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 	public bool isPrivate = false;
 
 	// We'll only be in one lobby at once for this demo, so let's track it here
-	private Lobby currentLobby;
+	public Lobby currentLobby { get; private set; }
 
 	private Player loggedInPlayer;
 
@@ -44,20 +44,15 @@ public class LobbyHelloWorld : MonoBehaviour {
 			WriteDebugMessage("Unity Services initialized");
 
 			/// player log in
-			// Log in a player for this game client
 			loggedInPlayer = await GetPlayerFromAnonymousLoginAsync();
 			WriteDebugMessage("Player successfully logged in");
 
 			// Add some data to our player
 			// This data will be included in a lobby under players -> player.data
 			loggedInPlayer.Data.Add("Ready", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "No"));
-
-			//await ExecuteLobbyDemoAsync();
 		} catch (Exception ex) {
 			WriteDebugMessage($"{ex}");
 		}
-
-		//await CleanupDemoLobbyAsync();
 	}
 
 	// TODO:
@@ -72,145 +67,35 @@ public class LobbyHelloWorld : MonoBehaviour {
 		}
 	}
 
-	static void SubmitNewPosition() {
-		if (GUILayout.Button(NetworkManager.Singleton.IsServer ? "Move" : "Request Position Change")) {
-			if (NetworkManager.Singleton.IsServer && !NetworkManager.Singleton.IsClient) {
-				foreach (ulong uid in NetworkManager.Singleton.ConnectedClientsIds)
-					NetworkManager.Singleton.SpawnManager.GetPlayerNetworkObject(uid).GetComponent<HelloWorldPlayer>().Move();
-			} else {
-				var playerObject = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
-				var player = playerObject.GetComponent<HelloWorldPlayer>();
-				player.Move();
-			}
-		}
-	}
-
-	// A basic demo of lobby functionality
-	async Task ExecuteLobbyDemoAsync() {
-		await JoinOrCreateALobby();
-
-		await UpdateOwnPlayerData();
-
-		if (!currentLobby.HostId.Equals(loggedInPlayer.Id)) {
-			// Since we're not the lobby host, let's just leave the lobby
-			await LeaveLobby();
-		} else {
-			await UpdateLobbyData();
-
-			// OK, we're done with the lobby - let's delete it
-			await Lobbies.Instance.DeleteLobbyAsync(currentLobby.Id);
-
-			WriteDebugMessage($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
-
-			currentLobby = null;
-		}
-
-		/// Quickjoin
-		try {
-			await QuickJoin();
-		} catch (LobbyServiceException ex) {
-			if (ex.Reason == LobbyExceptionReason.NoOpenLobbies) {
-				WriteDebugMessage("QuickJoin has failed because there are no lobbies to join. " +
-					"If you are running the HelloWorld sample for the first time, this is expected.\n" +
-					"Try using a second client to create a new lobby that matches the name filter above, then try to QuickJoin again.");
-			} else {
-				WriteDebugMessage($"{ ex}");
-			}
-		}
-
-		// If we didn't find a lobby, abort run
-		if (currentLobby == null) {
-			WriteDebugMessage("Unable to find a lobby using Quick Join");
-			return;
-		}
-
-		// Let's write a little info about the lobby we quick-joined
-		WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
-		WriteDebugMessage("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
-
-		// There's not anything else we can really do here, so let's leave the lobby
-		await LeaveLobby();
-	}
-
 	// #####################
 	// # Example Functions #
 	// #####################
-	private async Task UpdateLobbyData() {
-		// Only hosts can set lobby data, and we're the host, so let's set some
-		// Note that lobby host can be passed around intentionally (by the current host updating the host id)
-		// Host is randomly assigned if the previous host leaves
+	public async Task SetRelayCodeToLobby(string joinCode) {
+		currentLobby.Data["JoinCode"] =
+			new DataObject(DataObject.VisibilityOptions.Public, joinCode);
 
-		// Let's update some existing lobby data
-		currentLobby.Data["GameMode"] =
-			new DataObject(DataObject.VisibilityOptions.Public, "deathmatch", DataObject.IndexOptions.S2);
-
-		// Let's add some new data to the lobby
-		currentLobby.Data.Add("ExamplePublicLobbyData",
-			new DataObject(DataObject.VisibilityOptions.Public, "Everyone can see this"));
-
-		currentLobby.Data.Add("ExamplePrivateLobbyData",
-			new DataObject(DataObject.VisibilityOptions.Private, "Only the host sees this"));
-
-		currentLobby.Data.Add("ExampleMemberLobbyData",
-			new DataObject(DataObject.VisibilityOptions.Member, "Only lobby members see this"));
-
-		// OK, now let's try to push these local changes to the service
+		// update lobby data
 		currentLobby = await Lobbies.Instance.UpdateLobbyAsync(
 			lobbyId: currentLobby.Id,
 			options: new UpdateLobbyOptions() {
 				Data = currentLobby.Data
-			});
-
-		// Let's print the updated lobby
-		WriteDebugMessage($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
-		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+			}
+		);
 
 		// Since we're the host, let's wait a second and then heartbeat the lobby
 		await Task.Delay(1000);
 		await Lobbies.Instance.SendHeartbeatPingAsync(currentLobby.Id);
-
-		// Let's print the updated lobby.  The LastUpdated time should be different.
-		WriteDebugMessage($"Heartbeated lobby {currentLobby.Name} ({currentLobby.Id})");
-		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 	}
 
-	private async Task JoinOrCreateALobby() {
-		List<Lobby> foundLobbies = await SearchForLobbies();
-
-		if (foundLobbies.Any()) { // Try to join a random lobby if one exists
-								  // Let's print info about the lobbies we found
-			await JoinRandomLobby(foundLobbies);
-		} else { // Didn't find any lobbies, create a new lobby
-				 // Populate the new lobby with some data; use indexes so it's easy to search for
-			await CreateLobby();
-		}
-
-		// Let's write a little info about the lobby we joined / created
-		WriteDebugMessage("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
-	}
-
-	private async Task UpdateOwnPlayerData() {
-		// Let's add some new data for our player and update the lobby state
-		// Players can update their own data
-		loggedInPlayer.Data.Add("ExamplePublicPlayerData",
-			new PlayerDataObject(PlayerDataObject.VisibilityOptions.Public, "Everyone can see this"));
-
-		loggedInPlayer.Data.Add("ExamplePrivatePlayerData",
-			new PlayerDataObject(PlayerDataObject.VisibilityOptions.Private, "Only the host sees this"));
-
-		loggedInPlayer.Data.Add("ExampleMemberPlayerData",
-			new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "Only lobby members see this"));
-
+	public async Task SetOwnPlayerAllocationId(string allocationId) {
 		// Update the lobby
 		currentLobby = await Lobbies.Instance.UpdatePlayerAsync(
 			lobbyId: currentLobby.Id,
 			playerId: loggedInPlayer.Id,
 			options: new UpdatePlayerOptions() {
-				Data = loggedInPlayer.Data
+				AllocationId = allocationId
+				//Data = loggedInPlayer.Data
 			});
-
-		WriteDebugMessage($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
-		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 
 		// Let's poll for the lobby data again just to see what it looks like
 		currentLobby = await Lobbies.Instance.GetLobbyAsync(currentLobby.Id);

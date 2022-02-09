@@ -2,12 +2,13 @@ using UnityEngine;
 using UnityEditor;
 using Unity.Netcode;
 
-[RequireComponent(typeof(LobbyHelloWorld))]
-public class GUILobbyManager : MonoBehaviour {
+[RequireComponent(typeof(LobbyHelloWorld), typeof(RelayManager))]
+public class GUILobbyManager : NetworkBehaviour {
 	[SerializeField]
 	private Rect guiSize = new Rect(10, 10, 300, 300);
 
-	private LobbyHelloWorld manager => GetComponent<LobbyHelloWorld>();
+	private LobbyHelloWorld lobby => GetComponent<LobbyHelloWorld>();
+	private RelayManager relay => GetComponent<RelayManager>();
 
 	void OnGUI() {
 		GUILayout.BeginArea(guiSize);
@@ -17,7 +18,7 @@ public class GUILobbyManager : MonoBehaviour {
 			CreateLobby();
 			JoinRandomLobby();
 		} else {
-			if (!NetworkManager.Singleton.IsHost) {
+			if (NetworkManager.Singleton.IsHost) {
 				CloseLobby();
 			} else {
 				LeaveLobby();
@@ -26,12 +27,12 @@ public class GUILobbyManager : MonoBehaviour {
 			StatusLabels();
 		}
 
-		GUILayout.Label(manager.debugMessage);
+		GUILayout.Label(lobby.debugMessage);
 
 		GUILayout.EndArea();
 	}
 
-	static void StatusLabels() {
+	private void StatusLabels() {
 		string mode = NetworkManager.Singleton.IsHost ?
 			"Host" : "Client";
 
@@ -42,36 +43,60 @@ public class GUILobbyManager : MonoBehaviour {
 
 	private async void CreateLobby() {
 		if (GUILayout.Button("Create Lobby")) {
-			await manager.CreateLobby();
+			await lobby.CreateLobby();
+
+			RelayHostData relayHostData = await relay.SetupRelay();
+
+			// save join code in lobby
+			await lobby.SetRelayCodeToLobby(relayHostData.JoinCode);
+
+			// set allocationID for host
+			await lobby.SetOwnPlayerAllocationId(relayHostData.AllocationID.ToString());
 
 			if (NetworkManager.Singleton.StartHost()) {
-				manager.debugMessage += "\nHost started ...";
+				lobby.debugMessage += "\nHost started ...";
 			} else {
-				manager.debugMessage += "\nUnable to start host!";
+				lobby.debugMessage += "\nUnable to start host!";
 			}
 		}
 	}
 
 	private async void JoinRandomLobby() {
 		if (GUILayout.Button("Join a random Lobby")) {
-			await manager.SearchAndJoinLobby();
+			await lobby.SearchAndJoinLobby();
+
+			// get relay code from lobby
+			string joinCode = lobby.currentLobby.Data["JoinCode"].Value;
+
+			// join relay
+			RelayJoinData relayJoinData = await relay.JoinRelay(joinCode);
+
+			// set allocationID in lobby for client
+			await lobby.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
 
 			if (NetworkManager.Singleton.StartClient()) {
-				manager.debugMessage += "\nClient started ...";
+				lobby.debugMessage += "\nClient started ...";
 			} else {
-				manager.debugMessage += "\nUnable to start client!";
+				lobby.debugMessage += "\nUnable to start client!";
 			}
 		}
 	}
 
 	private async void LeaveLobby() {
-		if (GUILayout.Button("Leave lobby")) await manager.LeaveLobby();
+		if (GUILayout.Button("Leave lobby")) {
+			await lobby.LeaveLobby();
+			NetworkManager.Singleton.Shutdown();
+		}
 	}
 
 	private async void CloseLobby() {
-		if (GUILayout.Button("Close lobby")) await manager.CloseLobby();
-	}
+		if (GUILayout.Button("Close lobby")) {
+			// scheint nicht zuverl‰ssig Clients rauszuschmeiﬂen
+			await lobby.CloseLobby();
 
+			NetworkManager.Singleton.Shutdown();
+		}
+	}
 
 #if UNITY_EDITOR
 	// Editor UI

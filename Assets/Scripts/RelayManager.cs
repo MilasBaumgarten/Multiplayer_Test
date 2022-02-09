@@ -60,8 +60,6 @@ public class RelayManager : MonoBehaviour {
 
 		JoinAllocation allocation = await Relay.Instance.JoinAllocationAsync(joinCode);
 
-		WriteDebugMessage("Joint allocation");
-
 		RelayJoinData relayJoinData = new RelayJoinData {
 			Key = allocation.Key,
 			Port = (ushort)allocation.RelayServer.Port,

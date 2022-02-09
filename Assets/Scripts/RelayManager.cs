@@ -14,6 +14,7 @@ public class RelayManager : MonoBehaviour {
 	[SerializeField]
 	private int maxConnections = 2;
 
+	[HideInInspector]
 	public string debugMessage = "";
 
 	public bool isRelayEnabled => transport != null && transport.Protocol == UnityTransport.ProtocolType.RelayUnityTransport;

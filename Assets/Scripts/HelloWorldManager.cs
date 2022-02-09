@@ -1,35 +1,29 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEditor;
 
 public class HelloWorldManager : MonoBehaviour {
+	[SerializeField]
+	private Rect guiSize = new Rect(10, 10, 300, 300);
+
+	private void Awake() {
+		guiSize = new Rect(
+			guiSize.x,
+			Screen.height - guiSize.y - guiSize.height,
+			guiSize.width,
+			guiSize.height
+		);
+	}
+
 	void OnGUI() {
-		GUILayout.BeginArea(new Rect(10, 10, 300, 300));
+		GUILayout.BeginArea(guiSize);
 
 		// if not client or server
-		if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer) {
-			StartButtons();
-		}
-		else {
-			StatusLabels();
+		if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsHost) {
 			SubmitNewPosition();
 		}
 
 		GUILayout.EndArea();
-	}
-
-	static void StartButtons() {
-		if (GUILayout.Button("Host")) NetworkManager.Singleton.StartHost();
-		if (GUILayout.Button("Client")) NetworkManager.Singleton.StartClient();
-		if (GUILayout.Button("Server")) NetworkManager.Singleton.StartServer();
-	}
-
-	static void StatusLabels() {
-		string mode = NetworkManager.Singleton.IsHost ?
-			"Host" : NetworkManager.Singleton.IsServer ? "Server" : "Client";
-
-		GUILayout.Label("Transport: " +
-			NetworkManager.Singleton.NetworkConfig.NetworkTransport.GetType().Name);
-		GUILayout.Label("Mode: " + mode);
 	}
 
 	static void SubmitNewPosition() {
@@ -45,4 +39,20 @@ public class HelloWorldManager : MonoBehaviour {
 			}
 		}
 	}
+
+#if UNITY_EDITOR
+	// Editor UI
+	private void OnDrawGizmosSelected() {
+		Rect bottomLeftAlligned = new Rect(
+			guiSize.x,
+			Screen.height - guiSize.y - guiSize.height,
+			guiSize.width,
+			guiSize.height
+		);
+
+		Handles.BeginGUI();
+		Handles.DrawSolidRectangleWithOutline(bottomLeftAlligned, new Color(1, 1, 1, 0.1f), Color.black);
+		Handles.EndGUI();
+	}
+#endif
 }

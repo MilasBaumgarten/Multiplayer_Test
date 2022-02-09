@@ -11,16 +11,6 @@ using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
 using Random = UnityEngine.Random;
 
-/// <summary>
-/// A simple "Hello World" style example using Lobby, exercising most of the Lobby APIs.
-/// 
-/// SETUP:
-///  1. Attach this script to a GameObject in scene
-///  2. Sign in to your Unity developer account
-///  3. Link your project to a Lobby-enabled cloud project
-///  4. Enter play mode and observe the debug logs
-/// 
-/// </summary>
 public class LobbyHelloWorld : MonoBehaviour {
 	// Inspector properties with initial values
 
@@ -44,16 +34,19 @@ public class LobbyHelloWorld : MonoBehaviour {
 
 	private Player loggedInPlayer;
 
+	[HideInInspector]
+	public string debugMessage = "";
+
 	async void Start() {
 		try {
 			/// init Unity Services
 			await UnityServices.InitializeAsync();
-			Debug.Log("Unity Services initialized");
+			WriteDebugMessage("Unity Services initialized");
 
 			/// player log in
 			// Log in a player for this game client
 			loggedInPlayer = await GetPlayerFromAnonymousLoginAsync();
-			Debug.Log("Player successfully logged in");
+			WriteDebugMessage("Player successfully logged in");
 
 			// Add some data to our player
 			// This data will be included in a lobby under players -> player.data
@@ -61,53 +54,22 @@ public class LobbyHelloWorld : MonoBehaviour {
 
 			//await ExecuteLobbyDemoAsync();
 		} catch (Exception ex) {
-			Debug.LogException(ex);
+			WriteDebugMessage($"{ex}");
 		}
 
 		//await CleanupDemoLobbyAsync();
-
-		//Debug.Log("Demo complete!");
-	}
-
-	void OnGUI() {
-		GUILayout.BeginArea(new Rect(10, 10, 300, 300));
-
-		// if not client or server
-		if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer) {
-			StartButtons(this);
-		} else {
-			StatusLabels();
-			SubmitNewPosition();
-		}
-
-		GUILayout.EndArea();
 	}
 
 	// TODO:
 	//	- send Heartbeat to created Lobbby every 10-30 sec to assure, that it won't be marked as inactive
 
-	static void StartButtons(LobbyHelloWorld lobby) {
-		if (GUILayout.Button("Create Lobby")) lobby.CreateLobby();
-		if (GUILayout.Button("Join a random Lobby")) SearchAndJoinLobby(lobby);
-		//if (GUILayout.Button("Server")) NetworkManager.Singleton.StartServer();
-	}
-
-	private static async Task SearchAndJoinLobby(LobbyHelloWorld lobby) {
+	public async Task SearchAndJoinLobby() {
 		List<Lobby> foundLobbies = await SearchForLobbies();
 		if (foundLobbies.Any()) {
-			await lobby.JoinRandomLobby(foundLobbies);
+			await JoinRandomLobby(foundLobbies);
 		} else {
-			Debug.LogWarning("No Lobby found.");
+			WriteDebugMessage("No Lobby found.");
 		}
-	}
-
-	static void StatusLabels() {
-		string mode = NetworkManager.Singleton.IsHost ?
-			"Host" : NetworkManager.Singleton.IsServer ? "Server" : "Client";
-
-		GUILayout.Label("Transport: " +
-			NetworkManager.Singleton.NetworkConfig.NetworkTransport.GetType().Name);
-		GUILayout.Label("Mode: " + mode);
 	}
 
 	static void SubmitNewPosition() {
@@ -120,17 +82,6 @@ public class LobbyHelloWorld : MonoBehaviour {
 				var player = playerObject.GetComponent<HelloWorldPlayer>();
 				player.Move();
 			}
-		}
-	}
-
-	// Clean up the lobby we're in if we're the host
-	async Task CleanupDemoLobbyAsync() {
-		var localPlayerId = AuthenticationService.Instance.PlayerId;
-
-		// This is so that orphan lobbies aren't left around in case the demo fails partway through
-		if (currentLobby != null && currentLobby.HostId.Equals(localPlayerId)) {
-			await Lobbies.Instance.DeleteLobbyAsync(currentLobby.Id);
-			Debug.Log($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
 		}
 	}
 
@@ -149,7 +100,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 			// OK, we're done with the lobby - let's delete it
 			await Lobbies.Instance.DeleteLobbyAsync(currentLobby.Id);
 
-			Debug.Log($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
+			WriteDebugMessage($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
 
 			currentLobby = null;
 		}
@@ -159,23 +110,23 @@ public class LobbyHelloWorld : MonoBehaviour {
 			await QuickJoin();
 		} catch (LobbyServiceException ex) {
 			if (ex.Reason == LobbyExceptionReason.NoOpenLobbies) {
-				Debug.LogWarning("QuickJoin has failed because there are no lobbies to join. " +
+				WriteDebugMessage("QuickJoin has failed because there are no lobbies to join. " +
 					"If you are running the HelloWorld sample for the first time, this is expected.\n" +
 					"Try using a second client to create a new lobby that matches the name filter above, then try to QuickJoin again.");
 			} else {
-				Debug.LogException(ex);
+				WriteDebugMessage($"{ ex}");
 			}
 		}
 
 		// If we didn't find a lobby, abort run
 		if (currentLobby == null) {
-			Debug.Log("Unable to find a lobby using Quick Join");
+			WriteDebugMessage("Unable to find a lobby using Quick Join");
 			return;
 		}
 
 		// Let's write a little info about the lobby we quick-joined
-		Debug.Log($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
-		Debug.Log("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 
 		// There's not anything else we can really do here, so let's leave the lobby
 		await LeaveLobby();
@@ -211,16 +162,16 @@ public class LobbyHelloWorld : MonoBehaviour {
 			});
 
 		// Let's print the updated lobby
-		Debug.Log($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
-		Debug.Log("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 
 		// Since we're the host, let's wait a second and then heartbeat the lobby
 		await Task.Delay(1000);
 		await Lobbies.Instance.SendHeartbeatPingAsync(currentLobby.Id);
 
 		// Let's print the updated lobby.  The LastUpdated time should be different.
-		Debug.Log($"Heartbeated lobby {currentLobby.Name} ({currentLobby.Id})");
-		Debug.Log("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage($"Heartbeated lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 	}
 
 	private async Task JoinOrCreateALobby() {
@@ -235,7 +186,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 		}
 
 		// Let's write a little info about the lobby we joined / created
-		Debug.Log("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage("Lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 	}
 
 	private async Task UpdateOwnPlayerData() {
@@ -258,13 +209,13 @@ public class LobbyHelloWorld : MonoBehaviour {
 				Data = loggedInPlayer.Data
 			});
 
-		Debug.Log($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
-		Debug.Log("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage($"Updated lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage("Updated lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 
 		// Let's poll for the lobby data again just to see what it looks like
 		currentLobby = await Lobbies.Instance.GetLobbyAsync(currentLobby.Id);
 
-		Debug.Log("Latest lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		WriteDebugMessage("Latest lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 	}
 
 	// ####################
@@ -278,7 +229,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 		// This also shows an example of how to catch lobby exceptions
 		// Note that the QueryJoin API will throw exceptions on failures to find a matchmaking lobby,
 		//   so it's more likely to fail than other API calls
-		Debug.Log($"Trying to use Quick Join to find a lobby...");
+		WriteDebugMessage($"Trying to use Quick Join to find a lobby...");
 		currentLobby = await Lobbies.Instance.QuickJoinLobbyAsync(new QuickJoinLobbyOptions {
 			Player = loggedInPlayer, // Including the player here lets us join with data pre-populated
 			Filter = new List<QueryFilter> {
@@ -293,17 +244,31 @@ public class LobbyHelloWorld : MonoBehaviour {
 		});
 	}
 
-	private async Task LeaveLobby() {
-		await Lobbies.Instance.RemovePlayerAsync(
+	public async Task LeaveLobby() {
+		string localPlayerId = AuthenticationService.Instance.PlayerId;
+
+		if (currentLobby != null && !currentLobby.HostId.Equals(localPlayerId)) {
+			await Lobbies.Instance.RemovePlayerAsync(
 						lobbyId: currentLobby.Id,
 						playerId: loggedInPlayer.Id);
 
-		Debug.Log($"Left lobby {currentLobby.Name} ({currentLobby.Id})");
+			WriteDebugMessage($"Left lobby {currentLobby.Name} ({currentLobby.Id})");
 
-		currentLobby = null;
+			currentLobby = null;
+		}
 	}
 
-	private async Task CreateLobby() {
+	public async Task CloseLobby() {
+		string localPlayerId = AuthenticationService.Instance.PlayerId;
+
+		// This is so that orphan lobbies aren't left around in case the demo fails partway through
+		if (currentLobby != null && currentLobby.HostId.Equals(localPlayerId)) {
+			await Lobbies.Instance.DeleteLobbyAsync(currentLobby.Id);
+			WriteDebugMessage($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
+		}
+	}
+
+	public async Task CreateLobby() {
 		var lobbyData = new Dictionary<string, DataObject>() {
 			["Test"] = new DataObject(DataObject.VisibilityOptions.Public, "true", DataObject.IndexOptions.S1),
 			["GameMode"] = new DataObject(DataObject.VisibilityOptions.Public, "ctf", DataObject.IndexOptions.S2),
@@ -321,11 +286,11 @@ public class LobbyHelloWorld : MonoBehaviour {
 				Player = loggedInPlayer
 			});
 
-		Debug.Log($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
 	}
 
 	private async Task JoinRandomLobby(List<Lobby> foundLobbies) {
-		Debug.Log("Found lobbies:\n" + JsonConvert.SerializeObject(foundLobbies));
+		WriteDebugMessage("Found lobbies:\n" + JsonConvert.SerializeObject(foundLobbies));
 
 		// Let's pick a random lobby to join
 		var randomLobby = foundLobbies[Random.Range(0, foundLobbies.Count)];
@@ -340,7 +305,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 				Player = loggedInPlayer
 			});
 
-		Debug.Log($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
+		WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
 
 		// You can also join via a Lobby Code instead of a lobby ID
 		// Lobby Codes are a short, unique codes that map to a specific lobby ID
@@ -405,9 +370,9 @@ public class LobbyHelloWorld : MonoBehaviour {
 	}
 
 	// Log in a player using Unity's "Anonymous Login" API and construct a Player object for use with the Lobbies APIs
-	static async Task<Player> GetPlayerFromAnonymousLoginAsync() {
+	private async Task<Player> GetPlayerFromAnonymousLoginAsync() {
 		if (!AuthenticationService.Instance.IsSignedIn) {
-			Debug.Log($"Trying to log in a player ...");
+			WriteDebugMessage($"Trying to log in a player ...");
 
 			// Use Unity Authentication to log in
 			await AuthenticationService.Instance.SignInAnonymouslyAsync();
@@ -417,9 +382,14 @@ public class LobbyHelloWorld : MonoBehaviour {
 			}
 		}
 
-		Debug.Log("Player signed in as " + AuthenticationService.Instance.PlayerId);
+		WriteDebugMessage("Player signed in as " + AuthenticationService.Instance.PlayerId);
 
 		// Player objects have Get-only properties, so you need to initialize the data bag here if you want to use it
 		return new Player(AuthenticationService.Instance.PlayerId, null, new Dictionary<string, PlayerDataObject>());
+	}
+
+	private void WriteDebugMessage(string message) {
+		Debug.Log(message);
+		debugMessage = message;
 	}
 }

@@ -1,109 +1,188 @@
 using UnityEngine;
-using UnityEditor;
 using Unity.Netcode;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 [RequireComponent(typeof(LobbyHelloWorld), typeof(RelayManager))]
 public class GUILobbyManager : NetworkBehaviour {
+	// Buttons
 	[SerializeField]
-	private Rect guiSize = new Rect(10, 10, 300, 300);
+	private Button createLobbyButton;
+	[SerializeField]
+	private Button joinRandomLobbyButton;
+	[SerializeField]
+	private Button closeLobbyButton;
+	[SerializeField]
+	private Button leaveLobbyButton;
+	[SerializeField]
+	private Button startGameButton;
+
+	// Menus
+	[Space(10)]
+	[SerializeField]
+	private GameObject mpMenu;
+	[SerializeField]
+	private GameObject lobbyMenu;
+	[SerializeField]
+	private GameObject lobbyBrowser;
+	[SerializeField]
+	private GameObject loadingScreen;
+
+	[Space(10)]
+	[SerializeField]
+	private string gameScene;
 
 	private LobbyHelloWorld lobby => GetComponent<LobbyHelloWorld>();
 	private RelayManager relay => GetComponent<RelayManager>();
 
-	void OnGUI() {
-		GUILayout.BeginArea(guiSize);
-
-		// if not client or server
-		if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsHost) {
+	private void Start() {
+		// CREATE LOBBY
+		createLobbyButton?.onClick.AddListener(() => {
 			CreateLobby();
+
+			ShowUISelective(MPState.LOADING);
+			closeLobbyButton.gameObject.SetActive(true);
+			leaveLobbyButton.gameObject.SetActive(false);
+			startGameButton.gameObject.SetActive(true);
+		});
+
+		// JOIN RANDOM LOBBY
+		joinRandomLobbyButton?.onClick.AddListener(() => {
 			JoinRandomLobby();
-		} else {
-			if (NetworkManager.Singleton.IsHost) {
-				CloseLobby();
-			} else {
-				LeaveLobby();
-			}
 
-			StatusLabels();
-		}
+			ShowUISelective(MPState.LOADING);
+			closeLobbyButton.gameObject.SetActive(false);
+			leaveLobbyButton.gameObject.SetActive(true);
+			startGameButton.gameObject.SetActive(false);
+		});
 
-		GUILayout.Label(lobby.debugMessage);
+		// CLOSE LOBBY
+		closeLobbyButton?.onClick.AddListener(() => {
+			CloseLobby();
 
-		GUILayout.EndArea();
+			ShowUISelective(MPState.LOADING);
+		});
+
+		// LEAVE LOBBY
+		leaveLobbyButton?.onClick.AddListener(() => {
+			LeaveLobby();
+
+			ShowUISelective(MPState.LOADING);
+		});
+
+		// START GAME
+		startGameButton?.onClick.AddListener(() => {
+			StartGame();
+
+			ShowUISelective(MPState.LOADING);
+		});
+
+
+		// setup UI
+		ShowUISelective(MPState.MENU);
 	}
 
-	private void StatusLabels() {
-		string mode = NetworkManager.Singleton.IsHost ?
-			"Host" : "Client";
-
-		GUILayout.Label("Transport: " +
-			NetworkManager.Singleton.NetworkConfig.NetworkTransport.GetType().Name);
-		GUILayout.Label("Mode: " + mode);
+	private void StartGame() {
+		if (NetworkManager.Singleton.IsHost) {
+			NetworkManager.Singleton.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
+		}
 	}
 
 	private async void CreateLobby() {
-		if (GUILayout.Button("Create Lobby")) {
-			await lobby.CreateLobby();
+		await lobby.CreateLobby();
 
-			RelayHostData relayHostData = await relay.SetupRelay();
+		RelayHostData relayHostData = await relay.SetupRelay();
 
-			// save join code in lobby
-			await lobby.SetRelayCodeToLobby(relayHostData.JoinCode);
+		// save join code in lobby
+		await lobby.SetRelayCodeToLobby(relayHostData.JoinCode);
 
-			// set allocationID for host
-			await lobby.SetOwnPlayerAllocationId(relayHostData.AllocationID.ToString());
+		// set allocationID for host
+		await lobby.SetOwnPlayerAllocationId(relayHostData.AllocationID.ToString());
 
-			if (NetworkManager.Singleton.StartHost()) {
-				lobby.debugMessage += "\nHost started ...";
-			} else {
-				lobby.debugMessage += "\nUnable to start host!";
-			}
+		if (NetworkManager.Singleton.StartHost()) {
+			Debug.Log("\nHost started ...");
+			ShowUISelective(MPState.LOBBY);
+		} else {
+			Debug.Log("\nUnable to start host!");
+			ShowUISelective(MPState.MENU);
 		}
 	}
 
 	private async void JoinRandomLobby() {
-		if (GUILayout.Button("Join a random Lobby")) {
-			await lobby.SearchAndJoinLobby();
+		if (!await lobby.SearchAndJoinLobby()) {
+			// unable to join, return to menu
+			ShowUISelective(MPState.MENU);
+		}
 
-			// get relay code from lobby
-			string joinCode = lobby.currentLobby.Data["JoinCode"].Value;
+		// get relay code from lobby
+		string joinCode = lobby.currentLobby.Data["JoinCode"].Value;
 
-			// join relay
-			RelayJoinData relayJoinData = await relay.JoinRelay(joinCode);
+		// join relay
+		RelayJoinData relayJoinData = await relay.JoinRelay(joinCode);
 
-			// set allocationID in lobby for client
-			await lobby.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
+		// set allocationID in lobby for client
+		await lobby.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
 
-			if (NetworkManager.Singleton.StartClient()) {
-				lobby.debugMessage += "\nClient started ...";
-			} else {
-				lobby.debugMessage += "\nUnable to start client!";
-			}
+		if (NetworkManager.Singleton.StartClient()) {
+			Debug.Log("\nClient started ...");
+			ShowUISelective(MPState.LOBBY);
+		} else {
+			Debug.Log("\nUnable to start client!");
+			ShowUISelective(MPState.MENU);
 		}
 	}
 
 	private async void LeaveLobby() {
-		if (GUILayout.Button("Leave lobby")) {
-			await lobby.LeaveLobby();
-			NetworkManager.Singleton.Shutdown();
-		}
+		await lobby.LeaveLobby();
+
+		NetworkManager.Singleton.Shutdown();
+		ShowUISelective(MPState.MENU);
 	}
 
 	private async void CloseLobby() {
-		if (GUILayout.Button("Close lobby")) {
-			// scheint nicht zuverl‰ssig Clients rauszuschmeiﬂen
-			await lobby.CloseLobby();
+		// scheint nicht zuverl‰ssig Clients rauszuschmeiﬂen
+		await lobby.CloseLobby();
 
-			NetworkManager.Singleton.Shutdown();
+		NetworkManager.Singleton.Shutdown();
+		ShowUISelective(MPState.MENU);
+	}
+
+	// TODO:
+	//	- add Lobby Browser
+
+	private void ShowUISelective(MPState state) {
+		switch (state) {
+			case MPState.MENU:
+				mpMenu.SetActive(true);
+				lobbyMenu.SetActive(false);
+				lobbyBrowser.SetActive(false);
+				loadingScreen.SetActive(false);
+				break;
+			case MPState.BROWSER:
+				mpMenu.SetActive(false);
+				lobbyMenu.SetActive(false);
+				lobbyBrowser.SetActive(true);
+				loadingScreen.SetActive(false);
+				break;
+			case MPState.LOBBY:
+				mpMenu.SetActive(false);
+				lobbyMenu.SetActive(true);
+				lobbyBrowser.SetActive(false);
+				loadingScreen.SetActive(false);
+				break;
+			case MPState.LOADING:
+				mpMenu.SetActive(false);
+				lobbyMenu.SetActive(false);
+				lobbyBrowser.SetActive(false);
+				loadingScreen.SetActive(true);
+				break;
 		}
 	}
+}
 
-#if UNITY_EDITOR
-	// Editor UI
-	private void OnDrawGizmosSelected() {
-		Handles.BeginGUI();
-		Handles.DrawSolidRectangleWithOutline(guiSize, new Color(1, 1, 1, 0.1f), Color.black);
-		Handles.EndGUI();
-	}
-#endif
+enum MPState {
+	MENU,
+	BROWSER,
+	LOBBY,
+	LOADING
 }

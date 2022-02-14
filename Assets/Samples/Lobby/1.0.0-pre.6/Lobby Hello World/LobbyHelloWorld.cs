@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
-using Unity.Netcode;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
 using Unity.Services.Lobbies;
@@ -57,13 +56,15 @@ public class LobbyHelloWorld : MonoBehaviour {
 
 	// TODO:
 	//	- send Heartbeat to created Lobbby every 10-30 sec to assure, that it won't be marked as inactive
-
-	public async Task SearchAndJoinLobby() {
+	//	- take care of HTTP Error 429 Too Many Requests
+	public async Task<bool> SearchAndJoinLobby() {
 		List<Lobby> foundLobbies = await SearchForLobbies();
 		if (foundLobbies.Any()) {
 			await JoinRandomLobby(foundLobbies);
+			return true;
 		} else {
 			WriteDebugMessage("No Lobby found.");
+			return false;
 		}
 	}
 
@@ -71,8 +72,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 	// # Example Functions #
 	// #####################
 	public async Task SetRelayCodeToLobby(string joinCode) {
-		currentLobby.Data["JoinCode"] =
-			new DataObject(DataObject.VisibilityOptions.Public, joinCode);
+		currentLobby.Data["JoinCode"] = new DataObject(DataObject.VisibilityOptions.Public, joinCode);
 
 		// update lobby data
 		currentLobby = await Lobbies.Instance.UpdateLobbyAsync(
@@ -154,11 +154,11 @@ public class LobbyHelloWorld : MonoBehaviour {
 	}
 
 	public async Task CreateLobby() {
+		// TODO:
+		// Anscheinend muss hier irgendwas bei der Initialisierung reingepackt werden, weil currentLobby.Data sonst NULL ist
+		// -> ohne komische Initialisierung kann JoinCode nicht geschrieben werden
 		var lobbyData = new Dictionary<string, DataObject>() {
-			["Test"] = new DataObject(DataObject.VisibilityOptions.Public, "true", DataObject.IndexOptions.S1),
-			["GameMode"] = new DataObject(DataObject.VisibilityOptions.Public, "ctf", DataObject.IndexOptions.S2),
-			["Skill"] = new DataObject(DataObject.VisibilityOptions.Public, Random.Range(1, 51).ToString(), DataObject.IndexOptions.N1),
-			["Rank"] = new DataObject(DataObject.VisibilityOptions.Public, Random.Range(1, 51).ToString()),
+			["Version"] = new DataObject(DataObject.VisibilityOptions.Public, "0.1", DataObject.IndexOptions.N1)
 		};
 
 		// Create a new lobby
@@ -211,27 +211,12 @@ public class LobbyHelloWorld : MonoBehaviour {
 				op: QueryFilter.OpOptions.GT,
 				value: "0"),
 
-            // Let's add some filters for custom indexed fields
+            // check for version tag
             new QueryFilter(
-				field: QueryFilter.FieldOptions.S1, // S1 = "Test"
+				field: QueryFilter.FieldOptions.N1, // N1 = "Version"
                 op: QueryFilter.OpOptions.EQ,
-				value: "true"),
+				value: "0.1"),
 
-			new QueryFilter(
-				field: QueryFilter.FieldOptions.S2, // S2 = "GameMode"
-                op: QueryFilter.OpOptions.EQ,
-				value: "ctf"),
-
-            // Example "skill" range filter (skill is a custom numeric field in this example)
-            new QueryFilter(
-				field: QueryFilter.FieldOptions.N1, // N1 = "Skill"
-                op: QueryFilter.OpOptions.GT,
-				value: "0"),
-
-			new QueryFilter(
-				field: QueryFilter.FieldOptions.N1, // N1 = "Skill"
-                op: QueryFilter.OpOptions.LT,
-				value: "51"),
 		};
 
 		// Query results can also be ordered

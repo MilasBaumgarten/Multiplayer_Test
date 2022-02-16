@@ -174,6 +174,21 @@ public class LobbyHelloWorld : MonoBehaviour {
 		WriteDebugMessage($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
 	}
 
+	public async Task<bool> JoinLobbyById(string lobbyId){
+		try {
+			currentLobby = await Lobbies.Instance.JoinLobbyByIdAsync(
+				lobbyId: lobbyId,
+				options: new JoinLobbyByIdOptions() {
+					Player = loggedInPlayer
+				});
+
+			WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	private async Task JoinRandomLobby(List<Lobby> foundLobbies) {
 		WriteDebugMessage("Found lobbies:\n" + JsonConvert.SerializeObject(foundLobbies));
 
@@ -198,7 +213,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 		// currentLobby = await Lobbies.Instance.JoinLobbyByCodeAsync("myLobbyJoinCode");
 	}
 
-	private static async Task<List<Lobby>> SearchForLobbies() {
+	public static async Task<List<Lobby>> SearchForLobbies() {
 		// Query for existing lobbies
 
 		// Use filters to only return lobbies which match specific conditions

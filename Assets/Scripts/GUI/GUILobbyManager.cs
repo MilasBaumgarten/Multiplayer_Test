@@ -2,6 +2,9 @@ using UnityEngine;
 using Unity.Netcode;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using Unity.Services.Lobbies.Models;
+using System.Collections.Generic;
+using TMPro;
 
 [RequireComponent(typeof(LobbyHelloWorld), typeof(RelayManager))]
 public class GUILobbyManager : NetworkBehaviour {
@@ -11,11 +14,23 @@ public class GUILobbyManager : NetworkBehaviour {
 	[SerializeField]
 	private Button joinRandomLobbyButton;
 	[SerializeField]
+	private Button openLobbyBrowserButton;
+	[SerializeField]
 	private Button closeLobbyButton;
 	[SerializeField]
 	private Button leaveLobbyButton;
 	[SerializeField]
+	private Button leaveLobbyBrowserButton;
+	[SerializeField]
 	private Button startGameButton;
+
+	[Space(10)]
+	[SerializeField]
+	private GameObject lobbyBrowserContainer;
+	[SerializeField]
+	private GameObject lobbyEntryAsset;
+	[SerializeField]
+	private TMPro.TMP_InputField newLobbyName;
 
 	// Menus
 	[Space(10)]
@@ -32,8 +47,8 @@ public class GUILobbyManager : NetworkBehaviour {
 	[SerializeField]
 	private string gameScene;
 
-	private LobbyHelloWorld lobby => GetComponent<LobbyHelloWorld>();
-	private RelayManager relay => GetComponent<RelayManager>();
+	private LobbyHelloWorld lobbyManager => GetComponent<LobbyHelloWorld>();
+	private RelayManager relayManager => GetComponent<RelayManager>();
 
 	private void Start() {
 		// CREATE LOBBY
@@ -41,9 +56,6 @@ public class GUILobbyManager : NetworkBehaviour {
 			CreateLobby();
 
 			ShowUISelective(MPState.LOADING);
-			closeLobbyButton.gameObject.SetActive(true);
-			leaveLobbyButton.gameObject.SetActive(false);
-			startGameButton.gameObject.SetActive(true);
 		});
 
 		// JOIN RANDOM LOBBY
@@ -51,9 +63,18 @@ public class GUILobbyManager : NetworkBehaviour {
 			JoinRandomLobby();
 
 			ShowUISelective(MPState.LOADING);
-			closeLobbyButton.gameObject.SetActive(false);
-			leaveLobbyButton.gameObject.SetActive(true);
-			startGameButton.gameObject.SetActive(false);
+		});
+
+		// OPEN LOBBY BROWSER
+		openLobbyBrowserButton?.onClick.AddListener(() => {
+			SearchForLobbies();
+
+			ShowUISelective(MPState.BROWSER);
+		});
+
+		// LEAVE LOBBY BROWSER
+		leaveLobbyBrowserButton?.onClick.AddListener(() => {
+			ShowUISelective(MPState.MENU);
 		});
 
 		// CLOSE LOBBY
@@ -82,6 +103,52 @@ public class GUILobbyManager : NetworkBehaviour {
 		ShowUISelective(MPState.MENU);
 	}
 
+	public void SetNewLobbyName() {
+		lobbyManager.newLobbyName = newLobbyName.text;
+	}
+
+	private async void SearchForLobbies() {
+		List<Lobby> foundLobbies = await LobbyHelloWorld.SearchForLobbies();
+
+		foreach(Lobby lobby in foundLobbies) {
+			GameObject lobbyEntryGameObject = Instantiate(lobbyEntryAsset);
+			lobbyEntryGameObject.transform.SetParent(lobbyBrowserContainer.transform, false);
+
+			LobbyEntry LobbyEntry = lobbyEntryGameObject.GetComponent<LobbyEntry>();
+			LobbyEntry.lobbyId = lobby.Id;
+			LobbyEntry.guiLobbyManager = this;
+			LobbyEntry.SetLobbyName(" " + lobby.Name);	// unschön um Abstand zu halten aber erstmal gut genug
+		}
+	}
+
+	public async void JoinLobbyById(string lobbyId) {
+		ShowUISelective(MPState.LOADING);
+
+		if (await lobbyManager.JoinLobbyById(lobbyId)) {
+			ShowUISelective(MPState.LOADING);
+		} else {
+			SearchForLobbies();
+			ShowUISelective(MPState.BROWSER);
+		}
+
+		// get relay code from lobby
+		string joinCode = lobbyManager.currentLobby.Data["JoinCode"].Value;
+
+		// join relay
+		RelayJoinData relayJoinData = await relayManager.JoinRelay(joinCode);
+
+		// set allocationID in lobby for client
+		await lobbyManager.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
+
+		if (NetworkManager.Singleton.StartClient()) {
+			Debug.Log("\nClient started ...");
+			ShowUISelective(MPState.LOBBY_CLIENT);
+		} else {
+			Debug.Log("\nUnable to start client!");
+			ShowUISelective(MPState.MENU);
+		}
+	}
+
 	private void StartGame() {
 		if (NetworkManager.Singleton.IsHost) {
 			NetworkManager.Singleton.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
@@ -89,19 +156,19 @@ public class GUILobbyManager : NetworkBehaviour {
 	}
 
 	private async void CreateLobby() {
-		await lobby.CreateLobby();
+		await lobbyManager.CreateLobby();
 
-		RelayHostData relayHostData = await relay.SetupRelay();
+		RelayHostData relayHostData = await relayManager.SetupRelay();
 
 		// save join code in lobby
-		await lobby.SetRelayCodeToLobby(relayHostData.JoinCode);
+		await lobbyManager.SetRelayCodeToLobby(relayHostData.JoinCode);
 
 		// set allocationID for host
-		await lobby.SetOwnPlayerAllocationId(relayHostData.AllocationID.ToString());
+		await lobbyManager.SetOwnPlayerAllocationId(relayHostData.AllocationID.ToString());
 
 		if (NetworkManager.Singleton.StartHost()) {
 			Debug.Log("\nHost started ...");
-			ShowUISelective(MPState.LOBBY);
+			ShowUISelective(MPState.LOBBY_HOST);
 		} else {
 			Debug.Log("\nUnable to start host!");
 			ShowUISelective(MPState.MENU);
@@ -109,23 +176,23 @@ public class GUILobbyManager : NetworkBehaviour {
 	}
 
 	private async void JoinRandomLobby() {
-		if (!await lobby.SearchAndJoinLobby()) {
+		if (!await lobbyManager.SearchAndJoinLobby()) {
 			// unable to join, return to menu
 			ShowUISelective(MPState.MENU);
 		}
 
 		// get relay code from lobby
-		string joinCode = lobby.currentLobby.Data["JoinCode"].Value;
+		string joinCode = lobbyManager.currentLobby.Data["JoinCode"].Value;
 
 		// join relay
-		RelayJoinData relayJoinData = await relay.JoinRelay(joinCode);
+		RelayJoinData relayJoinData = await relayManager.JoinRelay(joinCode);
 
 		// set allocationID in lobby for client
-		await lobby.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
+		await lobbyManager.SetOwnPlayerAllocationId(relayJoinData.AllocationID.ToString());
 
 		if (NetworkManager.Singleton.StartClient()) {
 			Debug.Log("\nClient started ...");
-			ShowUISelective(MPState.LOBBY);
+			ShowUISelective(MPState.LOBBY_CLIENT);
 		} else {
 			Debug.Log("\nUnable to start client!");
 			ShowUISelective(MPState.MENU);
@@ -133,7 +200,7 @@ public class GUILobbyManager : NetworkBehaviour {
 	}
 
 	private async void LeaveLobby() {
-		await lobby.LeaveLobby();
+		await lobbyManager.LeaveLobby();
 
 		NetworkManager.Singleton.Shutdown();
 		ShowUISelective(MPState.MENU);
@@ -141,7 +208,7 @@ public class GUILobbyManager : NetworkBehaviour {
 
 	private async void CloseLobby() {
 		// scheint nicht zuverlässig Clients rauszuschmeißen
-		await lobby.CloseLobby();
+		await lobbyManager.CloseLobby();
 
 		NetworkManager.Singleton.Shutdown();
 		ShowUISelective(MPState.MENU);
@@ -164,11 +231,25 @@ public class GUILobbyManager : NetworkBehaviour {
 				lobbyBrowser.SetActive(true);
 				loadingScreen.SetActive(false);
 				break;
-			case MPState.LOBBY:
+			case MPState.LOBBY_CLIENT:
 				mpMenu.SetActive(false);
 				lobbyMenu.SetActive(true);
 				lobbyBrowser.SetActive(false);
 				loadingScreen.SetActive(false);
+
+				closeLobbyButton.gameObject.SetActive(false);
+				leaveLobbyButton.gameObject.SetActive(true);
+				startGameButton.gameObject.SetActive(false);
+				break;
+			case MPState.LOBBY_HOST:
+				mpMenu.SetActive(false);
+				lobbyMenu.SetActive(true);
+				lobbyBrowser.SetActive(false);
+				loadingScreen.SetActive(false);
+
+				closeLobbyButton.gameObject.SetActive(true);
+				leaveLobbyButton.gameObject.SetActive(false);
+				startGameButton.gameObject.SetActive(true);
 				break;
 			case MPState.LOADING:
 				mpMenu.SetActive(false);
@@ -183,6 +264,7 @@ public class GUILobbyManager : NetworkBehaviour {
 enum MPState {
 	MENU,
 	BROWSER,
-	LOBBY,
+	LOBBY_HOST,
+	LOBBY_CLIENT,
 	LOADING
 }

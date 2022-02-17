@@ -3,7 +3,7 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class LobbyEntry : NetworkBehaviour {
+public class GUILobbyEntry : NetworkBehaviour {
 	[HideInInspector]
 	public string lobbyId;
 	[HideInInspector]

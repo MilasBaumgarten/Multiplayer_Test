@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -8,9 +7,9 @@ using Unity.Services.Authentication;
 using Unity.Services.Core;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
-using Random = UnityEngine.Random;
+using Unity.Netcode;
 
-public class LobbyHelloWorld : MonoBehaviour {
+public class LobbyManager : NetworkBehaviour {
 	// Inspector properties with initial values
 
 	/// <summary>
@@ -33,44 +32,28 @@ public class LobbyHelloWorld : MonoBehaviour {
 
 	private Player loggedInPlayer;
 
-	[HideInInspector]
-	public string debugMessage = "";
+	// TODO:
+	//	- send Heartbeat to created Lobbby every 10-30 sec to assure, that it won't be marked as inactive
+	//	- take care of HTTP Error 429 Too Many Requests
 
 	async void Start() {
 		try {
 			/// init Unity Services
 			await UnityServices.InitializeAsync();
-			WriteDebugMessage("Unity Services initialized");
+			Debug.Log("Unity Services initialized");
 
 			/// player log in
 			loggedInPlayer = await GetPlayerFromAnonymousLoginAsync();
-			WriteDebugMessage("Player successfully logged in");
+			Debug.Log("Player successfully logged in");
 
 			// Add some data to our player
 			// This data will be included in a lobby under players -> player.data
 			loggedInPlayer.Data.Add("Ready", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "No"));
 		} catch (Exception ex) {
-			WriteDebugMessage($"{ex}");
+			Debug.Log($"{ex}");
 		}
 	}
 
-	// TODO:
-	//	- send Heartbeat to created Lobbby every 10-30 sec to assure, that it won't be marked as inactive
-	//	- take care of HTTP Error 429 Too Many Requests
-	public async Task<bool> SearchAndJoinLobby() {
-		List<Lobby> foundLobbies = await SearchForLobbies();
-		if (foundLobbies.Any()) {
-			await JoinRandomLobby(foundLobbies);
-			return true;
-		} else {
-			WriteDebugMessage("No Lobby found.");
-			return false;
-		}
-	}
-
-	// #####################
-	// # Example Functions #
-	// #####################
 	public async Task SetRelayCodeToLobby(string joinCode) {
 		currentLobby.Data["JoinCode"] = new DataObject(DataObject.VisibilityOptions.Public, joinCode);
 
@@ -94,39 +77,96 @@ public class LobbyHelloWorld : MonoBehaviour {
 			playerId: loggedInPlayer.Id,
 			options: new UpdatePlayerOptions() {
 				AllocationId = allocationId
-				//Data = loggedInPlayer.Data
 			});
 
 		// Let's poll for the lobby data again just to see what it looks like
 		currentLobby = await Lobbies.Instance.GetLobbyAsync(currentLobby.Id);
 
-		WriteDebugMessage("Latest lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+		Debug.Log("Latest lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
 	}
 
-	// ####################
-	// # Helper Functions #
-	// ####################
-	private async Task QuickJoin() {
-		// Now, let's try the QuickJoin API, which just puts our player in a matching lobby automatically
-		// This is fast and reliable (as long as matching lobbies are available), but removes some user
-		//   interactivity (can't choose from a list of lobbies)
-		// You can use filters to specify which types of lobbies can be joined just like a Query call
-		// This also shows an example of how to catch lobby exceptions
-		// Note that the QueryJoin API will throw exceptions on failures to find a matchmaking lobby,
-		//   so it's more likely to fail than other API calls
-		WriteDebugMessage($"Trying to use Quick Join to find a lobby...");
-		currentLobby = await Lobbies.Instance.QuickJoinLobbyAsync(new QuickJoinLobbyOptions {
-			Player = loggedInPlayer, // Including the player here lets us join with data pre-populated
-			Filter = new List<QueryFilter> {
-                    // Let's search for lobbies with a specific name
-                    new QueryFilter(
-						field: QueryFilter.FieldOptions.Name,
-						op: QueryFilter.OpOptions.EQ,
-						value: "My New Lobby"),
+	public async Task<bool> SetOwnPlayerCharacter(string selectedCharacter) {
+		// poll the lobby to get accurate player count
+		currentLobby = await Lobbies.Instance.GetLobbyAsync(currentLobby.Id);
 
-                    // You can add more filters here, such as filters on custom data fields
-                }
-		});
+		//check that two players are in the lobby
+		if (currentLobby.Players.Count != 2) {
+			Debug.LogWarning($"Expected a player count of 2, found: {currentLobby.Players.Count}!");
+			return false;
+		}
+		print(selectedCharacter);
+		UpdatePlayerCharactersClientRpc(selectedCharacter);
+		return true;
+	}
+
+	[ClientRpc]
+	private async void UpdatePlayerCharactersClientRpc(string hostSelectedCharacter) {
+		if (NetworkManager.Singleton.IsHost) {
+			SetPlayerCharacterInfo(loggedInPlayer, hostSelectedCharacter);
+		} else {
+			if (hostSelectedCharacter == Character.CATRIONA.ToString()) {
+				SetPlayerCharacterInfo(loggedInPlayer, Character.ROBERT.ToString());
+			} else {
+				SetPlayerCharacterInfo(loggedInPlayer, Character.CATRIONA.ToString());
+			}
+		}
+
+		// update player
+		currentLobby = await Lobbies.Instance.UpdatePlayerAsync(
+			lobbyId: currentLobby.Id,
+			playerId: loggedInPlayer.Id,
+			options: new UpdatePlayerOptions() {
+				Data = loggedInPlayer.Data
+			}
+		);
+
+		// Let's poll for the lobby data again just to see what it looks like
+		currentLobby = await Lobbies.Instance.GetLobbyAsync(currentLobby.Id);
+
+		Debug.Log("Latest lobby info:\n" + JsonConvert.SerializeObject(currentLobby));
+	}
+
+	private void SetPlayerCharacterInfo(Player player, string selectedCharacter) {
+		if (player.Data.ContainsKey("Character")) {
+			player.Data["Character"] = new PlayerDataObject(
+				visibility: PlayerDataObject.VisibilityOptions.Public,
+				value: selectedCharacter.ToString()
+			);
+		} else {
+			player.Data.Add(
+				"Character",
+				new PlayerDataObject(
+					visibility: PlayerDataObject.VisibilityOptions.Public,
+					value: selectedCharacter.ToString()
+				)
+			);
+		}
+	}
+
+	public async Task<bool> QuickJoin() {
+		try {
+			Debug.Log($"Trying to use Quick Join to find a lobby...");
+			currentLobby = await Lobbies.Instance.QuickJoinLobbyAsync(new QuickJoinLobbyOptions {
+				Player = loggedInPlayer, // Including the player here lets us join with data pre-populated
+				Filter = new List<QueryFilter> {
+                    // Let's search for lobbies with open slots and the right version
+                    new QueryFilter(
+						field: QueryFilter.FieldOptions.AvailableSlots,
+						op: QueryFilter.OpOptions.GT,
+						value: "0"),
+
+					// check for version tag
+					new QueryFilter(
+						field: QueryFilter.FieldOptions.N1, // N1 = "Version"
+						op: QueryFilter.OpOptions.EQ,
+						value: "0.1"),
+				}
+			});
+			return true;
+		} catch {
+			Debug.LogWarning("couldn't find a lobby");
+			return false;
+		}
 	}
 
 	public async Task LeaveLobby() {
@@ -137,7 +177,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 						lobbyId: currentLobby.Id,
 						playerId: loggedInPlayer.Id);
 
-			WriteDebugMessage($"Left lobby {currentLobby.Name} ({currentLobby.Id})");
+			Debug.Log($"Left lobby {currentLobby.Name} ({currentLobby.Id})");
 
 			currentLobby = null;
 		}
@@ -149,7 +189,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 		// This is so that orphan lobbies aren't left around in case the demo fails partway through
 		if (currentLobby != null && currentLobby.HostId.Equals(localPlayerId)) {
 			await Lobbies.Instance.DeleteLobbyAsync(currentLobby.Id);
-			WriteDebugMessage($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
+			Debug.Log($"Deleted lobby {currentLobby.Name} ({currentLobby.Id})");
 		}
 	}
 
@@ -171,7 +211,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 				Player = loggedInPlayer
 			});
 
-		WriteDebugMessage($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
+		Debug.Log($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
 	}
 
 	public async Task<bool> JoinLobbyById(string lobbyId){
@@ -182,43 +222,17 @@ public class LobbyHelloWorld : MonoBehaviour {
 					Player = loggedInPlayer
 				});
 
-			WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
+			Debug.Log($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
 			return true;
 		} catch {
 			return false;
 		}
 	}
 
-	private async Task JoinRandomLobby(List<Lobby> foundLobbies) {
-		WriteDebugMessage("Found lobbies:\n" + JsonConvert.SerializeObject(foundLobbies));
-
-		// Let's pick a random lobby to join
-		var randomLobby = foundLobbies[Random.Range(0, foundLobbies.Count)];
-
-		// Try to join the lobby
-		// Player is optional because the service can pull the player data from the auth token
-		// However, if your player has custom data, you will want to pass the Player object into this call
-		// This will save you having to do a Join call followed by an UpdatePlayer call
-		currentLobby = await Lobbies.Instance.JoinLobbyByIdAsync(
-			lobbyId: randomLobby.Id,
-			options: new JoinLobbyByIdOptions() {
-				Player = loggedInPlayer
-			});
-
-		WriteDebugMessage($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
-
-		// You can also join via a Lobby Code instead of a lobby ID
-		// Lobby Codes are a short, unique codes that map to a specific lobby ID
-		// EX:
-		// currentLobby = await Lobbies.Instance.JoinLobbyByCodeAsync("myLobbyJoinCode");
-	}
-
 	public static async Task<List<Lobby>> SearchForLobbies() {
 		// Query for existing lobbies
 
 		// Use filters to only return lobbies which match specific conditions
-		// You can only filter on built-in properties (Ex: AvailableSlots) or indexed custom data (S1, N1, etc.)
-		// Take a look at the API for other built-in fields you can filter on
 		List<QueryFilter> queryFilters = new List<QueryFilter> {
             // Let's search for games with open slots (AvailableSlots greater than 0)
             new QueryFilter(
@@ -257,7 +271,7 @@ public class LobbyHelloWorld : MonoBehaviour {
 	// Log in a player using Unity's "Anonymous Login" API and construct a Player object for use with the Lobbies APIs
 	private async Task<Player> GetPlayerFromAnonymousLoginAsync() {
 		if (!AuthenticationService.Instance.IsSignedIn) {
-			WriteDebugMessage($"Trying to log in a player ...");
+			Debug.Log($"Trying to log in a player ...");
 
 			// Use Unity Authentication to log in
 			await AuthenticationService.Instance.SignInAnonymouslyAsync();
@@ -267,14 +281,14 @@ public class LobbyHelloWorld : MonoBehaviour {
 			}
 		}
 
-		WriteDebugMessage("Player signed in as " + AuthenticationService.Instance.PlayerId);
+		Debug.Log("Player signed in as " + AuthenticationService.Instance.PlayerId);
 
 		// Player objects have Get-only properties, so you need to initialize the data bag here if you want to use it
 		return new Player(AuthenticationService.Instance.PlayerId, null, new Dictionary<string, PlayerDataObject>());
 	}
+}
 
-	private void WriteDebugMessage(string message) {
-		Debug.Log(message);
-		debugMessage = message;
-	}
+public enum Character {
+	ROBERT,
+	CATRIONA
 }

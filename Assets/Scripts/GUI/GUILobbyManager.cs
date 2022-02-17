@@ -4,27 +4,23 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Unity.Services.Lobbies.Models;
 using System.Collections.Generic;
-using TMPro;
 
-[RequireComponent(typeof(LobbyHelloWorld), typeof(RelayManager))]
+[RequireComponent(typeof(LobbyManager), typeof(RelayManager))]
 public class GUILobbyManager : NetworkBehaviour {
-	// Buttons
+#region Variables
+	[Header("MP Menu")]
 	[SerializeField]
 	private Button createLobbyButton;
 	[SerializeField]
-	private Button joinRandomLobbyButton;
+	private Button quickJoinButton;
 	[SerializeField]
 	private Button openLobbyBrowserButton;
-	[SerializeField]
-	private Button closeLobbyButton;
-	[SerializeField]
-	private Button leaveLobbyButton;
+
+	[Header("Lobby Browser")]
 	[SerializeField]
 	private Button leaveLobbyBrowserButton;
-	[SerializeField]
-	private Button startGameButton;
 
-	[Space(10)]
+	[Space(5)]
 	[SerializeField]
 	private GameObject lobbyBrowserContainer;
 	[SerializeField]
@@ -32,8 +28,25 @@ public class GUILobbyManager : NetworkBehaviour {
 	[SerializeField]
 	private TMPro.TMP_InputField newLobbyName;
 
-	// Menus
-	[Space(10)]
+	[Header("Lobby")]
+	[SerializeField]
+	private Button closeLobbyButton;
+	[SerializeField]
+	private Button leaveLobbyButton;
+	[SerializeField]
+	private Button startGameButton;
+	[SerializeField]
+	private Button selectCatrionaButton;
+	[SerializeField]
+	private Button selectRobertButton;
+
+	[Space(5)]
+	[SerializeField]
+	private GameObject hostContainer;
+	[SerializeField]
+	private GameObject clientContainer;
+
+	[Header("Menus")]
 	[SerializeField]
 	private GameObject mpMenu;
 	[SerializeField]
@@ -43,14 +56,17 @@ public class GUILobbyManager : NetworkBehaviour {
 	[SerializeField]
 	private GameObject loadingScreen;
 
-	[Space(10)]
+	[Header("Game")]
 	[SerializeField]
 	private string gameScene;
 
-	private LobbyHelloWorld lobbyManager => GetComponent<LobbyHelloWorld>();
+	private LobbyManager lobbyManager => GetComponent<LobbyManager>();
 	private RelayManager relayManager => GetComponent<RelayManager>();
 
+#endregion
+
 	private void Start() {
+		#region MP Menu
 		// CREATE LOBBY
 		createLobbyButton?.onClick.AddListener(() => {
 			CreateLobby();
@@ -59,8 +75,8 @@ public class GUILobbyManager : NetworkBehaviour {
 		});
 
 		// JOIN RANDOM LOBBY
-		joinRandomLobbyButton?.onClick.AddListener(() => {
-			JoinRandomLobby();
+		quickJoinButton?.onClick.AddListener(() => {
+			Quickjoin();
 
 			ShowUISelective(MPState.LOADING);
 		});
@@ -71,12 +87,16 @@ public class GUILobbyManager : NetworkBehaviour {
 
 			ShowUISelective(MPState.BROWSER);
 		});
+		#endregion
 
+		#region Lobby Browser
 		// LEAVE LOBBY BROWSER
 		leaveLobbyBrowserButton?.onClick.AddListener(() => {
 			ShowUISelective(MPState.MENU);
 		});
+		#endregion
 
+		#region Lobby
 		// CLOSE LOBBY
 		closeLobbyButton?.onClick.AddListener(() => {
 			CloseLobby();
@@ -98,26 +118,45 @@ public class GUILobbyManager : NetworkBehaviour {
 			ShowUISelective(MPState.LOADING);
 		});
 
+		// SELECT CATRIONA
+		selectCatrionaButton?.onClick.AddListener(() => {
+			selectCatrionaButton.interactable = false;
+			selectRobertButton.interactable = true;
+
+			SelectCharacter(Character.CATRIONA);
+		});
+
+		// SELECT ROBERT
+		selectRobertButton?.onClick.AddListener(() => {
+			selectRobertButton.interactable = false;
+			selectCatrionaButton.interactable = true;
+
+			SelectCharacter(Character.ROBERT);
+		});
+		#endregion
 
 		// setup UI
 		ShowUISelective(MPState.MENU);
 	}
 
+	// MP MENU
 	public void SetNewLobbyName() {
 		lobbyManager.newLobbyName = newLobbyName.text;
 	}
 
-	private async void SearchForLobbies() {
-		List<Lobby> foundLobbies = await LobbyHelloWorld.SearchForLobbies();
 
-		foreach(Lobby lobby in foundLobbies) {
+	// LOBBY BROWSER
+	private async void SearchForLobbies() {
+		List<Lobby> foundLobbies = await LobbyManager.SearchForLobbies();
+
+		foreach (Lobby lobby in foundLobbies) {
 			GameObject lobbyEntryGameObject = Instantiate(lobbyEntryAsset);
 			lobbyEntryGameObject.transform.SetParent(lobbyBrowserContainer.transform, false);
 
-			LobbyEntry LobbyEntry = lobbyEntryGameObject.GetComponent<LobbyEntry>();
+			GUILobbyEntry LobbyEntry = lobbyEntryGameObject.GetComponent<GUILobbyEntry>();
 			LobbyEntry.lobbyId = lobby.Id;
 			LobbyEntry.guiLobbyManager = this;
-			LobbyEntry.SetLobbyName(" " + lobby.Name);	// unschön um Abstand zu halten aber erstmal gut genug
+			LobbyEntry.SetLobbyName(" " + lobby.Name);  // unschön um Abstand zu halten aber erstmal gut genug
 		}
 	}
 
@@ -149,9 +188,18 @@ public class GUILobbyManager : NetworkBehaviour {
 		}
 	}
 
+	// LOBBY
 	private void StartGame() {
 		if (NetworkManager.Singleton.IsHost) {
 			NetworkManager.Singleton.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
+		}
+	}
+
+	public async void SelectCharacter(Character selectedCharacter) {
+		if(!await lobbyManager.SetOwnPlayerCharacter(selectedCharacter.ToString())){
+			// reset selection buttons if this was unsuccessfull
+			selectRobertButton.interactable = true;
+			selectCatrionaButton.interactable = true;
 		}
 	}
 
@@ -175,10 +223,11 @@ public class GUILobbyManager : NetworkBehaviour {
 		}
 	}
 
-	private async void JoinRandomLobby() {
-		if (!await lobbyManager.SearchAndJoinLobby()) {
+	private async void Quickjoin() {
+		if (!await lobbyManager.QuickJoin()) {
 			// unable to join, return to menu
 			ShowUISelective(MPState.MENU);
+			return;
 		}
 
 		// get relay code from lobby
@@ -214,9 +263,6 @@ public class GUILobbyManager : NetworkBehaviour {
 		ShowUISelective(MPState.MENU);
 	}
 
-	// TODO:
-	//	- add Lobby Browser
-
 	private void ShowUISelective(MPState state) {
 		switch (state) {
 			case MPState.MENU:
@@ -237,9 +283,8 @@ public class GUILobbyManager : NetworkBehaviour {
 				lobbyBrowser.SetActive(false);
 				loadingScreen.SetActive(false);
 
-				closeLobbyButton.gameObject.SetActive(false);
-				leaveLobbyButton.gameObject.SetActive(true);
-				startGameButton.gameObject.SetActive(false);
+				clientContainer.gameObject.SetActive(true);
+				hostContainer.gameObject.SetActive(false);
 				break;
 			case MPState.LOBBY_HOST:
 				mpMenu.SetActive(false);
@@ -247,9 +292,8 @@ public class GUILobbyManager : NetworkBehaviour {
 				lobbyBrowser.SetActive(false);
 				loadingScreen.SetActive(false);
 
-				closeLobbyButton.gameObject.SetActive(true);
-				leaveLobbyButton.gameObject.SetActive(false);
-				startGameButton.gameObject.SetActive(true);
+				clientContainer.gameObject.SetActive(false);
+				hostContainer.gameObject.SetActive(true);
 				break;
 			case MPState.LOADING:
 				mpMenu.SetActive(false);

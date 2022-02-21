@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 479430632}
   - component: {fileID: 3616687008497715941}
   m_Layer: 0
-  m_Name: Lobby_Relay_Manager
+  m_Name: MP_Manager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -57,7 +57,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 479430631}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fa77ecf9859e1a54f9c1635746c9f5c2, type: 3}
   m_Name: 
@@ -2761,7 +2761,7 @@ MonoBehaviour:
   m_BlockingObjects: 0
   m_BlockingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 55
 --- !u!1 &5591206440635628003
 GameObject:
   m_ObjectHideFlags: 0

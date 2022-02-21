@@ -30,28 +30,24 @@ public class LobbyManager : NetworkBehaviour {
 	// We'll only be in one lobby at once for this demo, so let's track it here
 	public Lobby currentLobby { get; private set; }
 
-	private Player loggedInPlayer;
+	//private Player loggedInPlayer;
 
 	// TODO:
 	//	- send Heartbeat to created Lobbby every 10-30 sec to assure, that it won't be marked as inactive
 	//	- take care of HTTP Error 429 Too Many Requests
 
-	async void Start() {
-		try {
-			/// init Unity Services
-			await UnityServices.InitializeAsync();
-			Debug.Log("Unity Services initialized");
+	public async Task Init() {
+		/// init Unity Services
+		await UnityServices.InitializeAsync();
+		Debug.Log("Unity Services initialized");
 
-			/// player log in
-			loggedInPlayer = await GetPlayerFromAnonymousLoginAsync();
-			Debug.Log("Player successfully logged in");
+		/// player log in
+		PlayerManager.Instance.localPlayer = await GetPlayerFromAnonymousLoginAsync();
+		Debug.Log("Player successfully logged in");
 
-			// Add some data to our player
-			// This data will be included in a lobby under players -> player.data
-			loggedInPlayer.Data.Add("Ready", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "No"));
-		} catch (Exception ex) {
-			Debug.Log($"{ex}");
-		}
+		// Add some data to our player
+		// This data will be included in a lobby under players -> player.data
+		PlayerManager.Instance.localPlayer.Data.Add("Ready", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "No"));
 	}
 
 	public async Task SetRelayCodeToLobby(string joinCode) {
@@ -74,7 +70,7 @@ public class LobbyManager : NetworkBehaviour {
 		// Update the lobby
 		currentLobby = await Lobbies.Instance.UpdatePlayerAsync(
 			lobbyId: currentLobby.Id,
-			playerId: loggedInPlayer.Id,
+			playerId: PlayerManager.Instance.localPlayer.Id,
 			options: new UpdatePlayerOptions() {
 				AllocationId = allocationId
 			});
@@ -102,21 +98,21 @@ public class LobbyManager : NetworkBehaviour {
 	[ClientRpc]
 	private async void UpdatePlayerCharactersClientRpc(string hostSelectedCharacter) {
 		if (NetworkManager.Singleton.IsHost) {
-			SetPlayerCharacterInfo(loggedInPlayer, hostSelectedCharacter);
+			SetPlayerCharacterInfo(PlayerManager.Instance.localPlayer, hostSelectedCharacter);
 		} else {
 			if (hostSelectedCharacter == Character.CATRIONA.ToString()) {
-				SetPlayerCharacterInfo(loggedInPlayer, Character.ROBERT.ToString());
+				SetPlayerCharacterInfo(PlayerManager.Instance.localPlayer, Character.ROBERT.ToString());
 			} else {
-				SetPlayerCharacterInfo(loggedInPlayer, Character.CATRIONA.ToString());
+				SetPlayerCharacterInfo(PlayerManager.Instance.localPlayer, Character.CATRIONA.ToString());
 			}
 		}
 
 		// update player
 		currentLobby = await Lobbies.Instance.UpdatePlayerAsync(
 			lobbyId: currentLobby.Id,
-			playerId: loggedInPlayer.Id,
+			playerId: PlayerManager.Instance.localPlayer.Id,
 			options: new UpdatePlayerOptions() {
-				Data = loggedInPlayer.Data
+				Data = PlayerManager.Instance.localPlayer.Data
 			}
 		);
 
@@ -147,7 +143,7 @@ public class LobbyManager : NetworkBehaviour {
 		try {
 			Debug.Log($"Trying to use Quick Join to find a lobby...");
 			currentLobby = await Lobbies.Instance.QuickJoinLobbyAsync(new QuickJoinLobbyOptions {
-				Player = loggedInPlayer, // Including the player here lets us join with data pre-populated
+				Player = PlayerManager.Instance.localPlayer, // Including the player here lets us join with data pre-populated
 				Filter = new List<QueryFilter> {
                     // Let's search for lobbies with open slots and the right version
                     new QueryFilter(
@@ -175,7 +171,7 @@ public class LobbyManager : NetworkBehaviour {
 		if (currentLobby != null && !currentLobby.HostId.Equals(localPlayerId)) {
 			await Lobbies.Instance.RemovePlayerAsync(
 						lobbyId: currentLobby.Id,
-						playerId: loggedInPlayer.Id);
+						playerId: PlayerManager.Instance.localPlayer.Id);
 
 			Debug.Log($"Left lobby {currentLobby.Name} ({currentLobby.Id})");
 
@@ -208,7 +204,7 @@ public class LobbyManager : NetworkBehaviour {
 			options: new CreateLobbyOptions() {
 				Data = lobbyData,
 				IsPrivate = isPrivate,
-				Player = loggedInPlayer
+				Player = PlayerManager.Instance.localPlayer
 			});
 
 		Debug.Log($"Created new lobby {currentLobby.Name} ({currentLobby.Id})");
@@ -219,7 +215,7 @@ public class LobbyManager : NetworkBehaviour {
 			currentLobby = await Lobbies.Instance.JoinLobbyByIdAsync(
 				lobbyId: lobbyId,
 				options: new JoinLobbyByIdOptions() {
-					Player = loggedInPlayer
+					Player = PlayerManager.Instance.localPlayer
 				});
 
 			Debug.Log($"Joined lobby {currentLobby.Name} ({currentLobby.Id})");
@@ -288,6 +284,7 @@ public class LobbyManager : NetworkBehaviour {
 	}
 }
 
+[Serializable]
 public enum Character {
 	ROBERT,
 	CATRIONA

@@ -2,8 +2,8 @@ using UnityEngine;
 using Unity.Netcode;
 
 public class HelloWorldPlayer : NetworkBehaviour {
-
 	public NetworkVariable<Vector3> position = new NetworkVariable<Vector3>();
+
 
 	public override void OnNetworkSpawn() {
 		if (IsOwner) {
@@ -31,7 +31,7 @@ public class HelloWorldPlayer : NetworkBehaviour {
 	}
 
 	private void Update() {
-	// TODO: don'd move here, instead move after RPC
+	// TODO: don't move here, instead move after RPC
 		transform.position = position.Value;
 	}
 }

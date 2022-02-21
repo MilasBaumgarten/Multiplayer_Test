@@ -128,3 +128,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   position:
     m_InternalValue: {x: 0, y: 0, z: 0}
+  catrionaColor: {r: 0, g: 0.9622642, b: 0.09362285, a: 0}
+  robertColor: {r: 1, g: 0, b: 0, a: 0}

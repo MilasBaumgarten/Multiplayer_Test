@@ -63,9 +63,9 @@ public class GUILobbyManager : NetworkBehaviour {
 	private LobbyManager lobbyManager => GetComponent<LobbyManager>();
 	private RelayManager relayManager => GetComponent<RelayManager>();
 
-#endregion
+	#endregion
 
-	private void Start() {
+	private async void Start() {
 		#region MP Menu
 		// CREATE LOBBY
 		createLobbyButton?.onClick.AddListener(() => {
@@ -135,7 +135,9 @@ public class GUILobbyManager : NetworkBehaviour {
 		});
 		#endregion
 
-		// setup UI
+		// setup MP and UI
+		ShowUISelective(MPState.LOADING);
+		await lobbyManager.Init();
 		ShowUISelective(MPState.MENU);
 	}
 
@@ -163,6 +165,8 @@ public class GUILobbyManager : NetworkBehaviour {
 	public async void JoinLobbyById(string lobbyId) {
 		ShowUISelective(MPState.LOADING);
 
+		print(lobbyId);
+
 		if (await lobbyManager.JoinLobbyById(lobbyId)) {
 			ShowUISelective(MPState.LOADING);
 		} else {
@@ -186,6 +190,8 @@ public class GUILobbyManager : NetworkBehaviour {
 			Debug.Log("\nUnable to start client!");
 			ShowUISelective(MPState.MENU);
 		}
+
+		PlayerManager.Instance.Init();
 	}
 
 	// LOBBY
@@ -221,6 +227,8 @@ public class GUILobbyManager : NetworkBehaviour {
 			Debug.Log("\nUnable to start host!");
 			ShowUISelective(MPState.MENU);
 		}
+
+		PlayerManager.Instance.Init();
 	}
 
 	private async void Quickjoin() {
@@ -246,9 +254,12 @@ public class GUILobbyManager : NetworkBehaviour {
 			Debug.Log("\nUnable to start client!");
 			ShowUISelective(MPState.MENU);
 		}
+
+		PlayerManager.Instance.Init();
 	}
 
 	private async void LeaveLobby() {
+		PlayerManager.Instance.Cleanup();
 		await lobbyManager.LeaveLobby();
 
 		NetworkManager.Singleton.Shutdown();
@@ -256,6 +267,7 @@ public class GUILobbyManager : NetworkBehaviour {
 	}
 
 	private async void CloseLobby() {
+		PlayerManager.Instance.Cleanup();
 		// scheint nicht zuverl‰ssig Clients rauszuschmeiﬂen
 		await lobbyManager.CloseLobby();
 

@@ -2,9 +2,6 @@ using UnityEngine;
 using Unity.Netcode;
 
 public class HelloWorldPlayer : NetworkBehaviour {
-	public NetworkVariable<Vector3> position = new NetworkVariable<Vector3>();
-
-
 	public override void OnNetworkSpawn() {
 		if (IsOwner) {
 			Move();
@@ -12,12 +9,13 @@ public class HelloWorldPlayer : NetworkBehaviour {
 	}
 
 	public void Move() {
+		var randomPosition = GetRandomPositionOnPlane();
+		transform.position = randomPosition;
+
 		if (NetworkManager.Singleton.IsServer) {
-			var randomPosition = GetRandomPositionOnPlane();
-			transform.position = randomPosition;
-			position.Value = randomPosition;
+			SubmitPositionRequestClientRpc(randomPosition);
 		} else {
-			SubmitPositionRequestServerRpc();
+			SubmitPositionRequestServerRpc(randomPosition);
 		}
 	}
 
@@ -26,12 +24,12 @@ public class HelloWorldPlayer : NetworkBehaviour {
 	}
 
 	[ServerRpc]
-	private void SubmitPositionRequestServerRpc(ServerRpcParams rpcParams = default) {
-		position.Value = GetRandomPositionOnPlane();
+	private void SubmitPositionRequestServerRpc(Vector3 position) {
+		transform.position = position;
 	}
 
-	private void Update() {
-	// TODO: don't move here, instead move after RPC
-		transform.position = position.Value;
+	[ClientRpc]
+	private void SubmitPositionRequestClientRpc(Vector3 position) {
+		transform.position = position;
 	}
 }

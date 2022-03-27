@@ -4,10 +4,12 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Unity.Services.Lobbies.Models;
 using System.Collections.Generic;
+using Unity.Services.Lobbies;
+using System;
 
 [RequireComponent(typeof(LobbyManager), typeof(RelayManager))]
 public class GUILobbyManager : NetworkBehaviour {
-#region Variables
+	#region Variables
 	[Header("MP Menu")]
 	[SerializeField]
 	private Button createLobbyButton;
@@ -202,7 +204,7 @@ public class GUILobbyManager : NetworkBehaviour {
 	}
 
 	public async void SelectCharacter(Character selectedCharacter) {
-		if(!await lobbyManager.SetOwnPlayerCharacter(selectedCharacter.ToString())){
+		if (!await lobbyManager.SetOwnPlayerCharacter(selectedCharacter.ToString())) {
 			// reset selection buttons if this was unsuccessfull
 			selectRobertButton.interactable = true;
 			selectCatrionaButton.interactable = true;
